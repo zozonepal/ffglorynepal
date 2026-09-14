@@ -1,0 +1,6 @@
+{
+  "name": "FF Glory Nepal Bot Launcher",
+  "description": "Automated Free Fire guild glory bot launcher for Nepal servers with schedule automation, live execution logs, and room card milestone tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

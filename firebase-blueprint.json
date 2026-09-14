@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered user profile details",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "uid": {
+          "type": "string",
+          "description": "In-game UID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Garena Free Fire Nickname"
+        },
+        "role": {
+          "type": "string",
+          "description": "User role: user or admin",
+          "enum": ["user", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp"
+        }
+      },
+      "required": ["email", "uid", "displayName", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Confirmed FonePay wallet deposit transaction",
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "description": "Unique order ID"
+        },
+        "billId": {
+          "type": "string",
+          "description": "FonePay Remark / Bill ID"
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Email of purchasing user"
+        },
+        "userUid": {
+          "type": "string",
+          "description": "Garena Free Fire UID"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Total payment in NPR"
+        },
+        "credits": {
+          "type": "number",
+          "description": "Number of bot credits purchased"
+        },
+        "utrReference": {
+          "type": "string",
+          "description": "FonePay UTR / Bank Reference Number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["completed", "pending", "rejected"],
+          "description": "Status of transaction"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "description": "ISO timestamp"
+        }
+      },
+      "required": ["orderId", "billId", "userEmail", "userUid", "amount", "credits", "status", "verifiedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user account details in Firestore"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Stores confirmed user transaction orders accessible to admin panel"
+    }
+  }
+}
