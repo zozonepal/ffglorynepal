@@ -85,7 +85,8 @@ export function WalletDepositModal({
     const pollInterval = setInterval(async () => {
       try {
         const res = await fetch(`/api/payment/status/${activeQrData.orderId}`);
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
           if (data && data.status === 'completed') {
             setVerificationSuccess(true);

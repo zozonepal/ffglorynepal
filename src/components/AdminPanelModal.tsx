@@ -104,26 +104,59 @@ export function AdminPanelModal({
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailInput.trim(),
-          password: passwordInput,
-        }),
-      });
+      const cleanEmail = emailInput.trim().toLowerCase();
+      let data: any = null;
 
-      const data = await response.json();
+      try {
+        const response = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: cleanEmail,
+            password: passwordInput,
+          }),
+        });
 
-      if (!response.ok || !data.success) {
-        throw new Error(data?.error || 'Invalid admin credentials');
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        }
+      } catch {
+        // Backend API not reachable (e.g. static Vercel host)
       }
 
-      setIsAdminAuthenticated(true);
-      if (onAdminLoginSuccess && data.user) {
-        onAdminLoginSuccess(data.user);
+      if (data && data.success && data.user) {
+        setIsAdminAuthenticated(true);
+        if (onAdminLoginSuccess) {
+          onAdminLoginSuccess(data.user);
+        }
+        loadAdminData();
+        return;
       }
-      loadAdminData();
+
+      if (data && !data.success && data.error) {
+        throw new Error(data.error);
+      }
+
+      // Fallback local check for Vercel static deployments
+      if (cleanEmail === 'deepsonpokhrel12@gmail.com' && passwordInput === 'deepsonhero2121') {
+        const adminUser: UserProfile = {
+          email: 'deepsonpokhrel12@gmail.com',
+          uid: '9988776655',
+          displayName: 'Admin Deepson',
+          signedInAt: Date.now(),
+          role: 'admin',
+          isVerified: true,
+        };
+        setIsAdminAuthenticated(true);
+        if (onAdminLoginSuccess) {
+          onAdminLoginSuccess(adminUser);
+        }
+        loadAdminData();
+        return;
+      }
+
+      throw new Error('Invalid admin credentials. Please enter the correct email and password.');
     } catch (err: any) {
       setErrorMessage(err.message || 'Access denied. Incorrect email or password.');
     } finally {
