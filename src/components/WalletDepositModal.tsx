@@ -79,33 +79,78 @@ export function WalletDepositModal({
     return () => clearInterval(interval);
   }, [activeQrData]);
 
-  // Realtime automated status listener (polls backend status route every 5 seconds)
+  // Realtime automated status listener (polls merchant verification API every 3 seconds)
   useEffect(() => {
     if (!activeQrData || verificationSuccess) return;
 
+    let isMounted = true;
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/payment/status/${activeQrData.orderId}`);
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.status === 'completed') {
-            setVerificationSuccess(true);
-            soundManager.playMilestoneSound();
-            onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, 'LIVE_GATEWAY');
-            setTransactions(loadTransactions());
-            setAutoCheckStatus('Payment confirmed by gateway!');
-          } else {
-            setAutoCheckStatus('Waiting for FonePay settlement...');
+        let verified = false;
+
+        // 1. Try Express backend endpoint
+        try {
+          const res = await fetch(`/api/payment/status/${activeQrData.orderId}`);
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.status === 'completed') {
+              verified = true;
+            }
           }
+        } catch {
+          // quiet fallback
+        }
+
+        // 2. Direct merchant verification API check by remark
+        if (!verified) {
+          const directVerifyUrl = `https://lgpay-setup-api.vercel.app/verify?remark=${encodeURIComponent(activeQrData.billId)}`;
+          const directRes = await fetch(directVerifyUrl);
+          const contentType = directRes.headers.get('content-type') || '';
+          if (directRes.ok && contentType.includes('application/json')) {
+            const data = await directRes.json();
+            if (data && data.verified === true) {
+              verified = true;
+            }
+          }
+        }
+
+        if (verified && isMounted) {
+          clearInterval(pollInterval);
+          setVerificationSuccess(true);
+          soundManager.playMilestoneSound();
+
+          try {
+            await saveTransactionToFirestore({
+              orderId: activeQrData.orderId,
+              billId: activeQrData.billId,
+              userEmail: currentUser?.email || 'registered@user.com',
+              userUid: userUid || currentUser?.uid || '2198031254',
+              amount: activeQrData.amount,
+              credits: activeQrData.credits,
+              utrReference: `AUTO_REMARK_${activeQrData.billId}`,
+              status: 'completed',
+            });
+          } catch {
+            // quiet catch
+          }
+
+          onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, `REMARK_${activeQrData.billId}`);
+          setTransactions(loadTransactions());
+          setAutoCheckStatus('Payment confirmed by gateway!');
+        } else if (isMounted) {
+          setAutoCheckStatus(`Listening for remark '${activeQrData.billId}'...`);
         }
       } catch {
         // quiet poll
       }
-    }, 5000);
+    }, 3000);
 
-    return () => clearInterval(pollInterval);
-  }, [activeQrData, verificationSuccess, onCreditsAdded]);
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
+  }, [activeQrData, verificationSuccess, onCreditsAdded, currentUser, userUid]);
 
   if (!isOpen) return null;
 
@@ -125,6 +170,9 @@ export function WalletDepositModal({
       setIsSubmitting(true);
       setErrorMessage(null);
 
+      // Generate a unique automated remark for every QR order session
+      const autoRemark = `FFG${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
+
       let data: FonePayQrResponse | null = null;
 
       try {
@@ -133,7 +181,7 @@ export function WalletDepositModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             credits: computedCredits,
-            remark: remarkUid.trim() || `FF${computedCredits}C`,
+            remark: autoRemark,
             userUid: userUid || currentUser.uid || '2198031254',
             userEmail: currentUser.email,
           }),
@@ -158,8 +206,7 @@ export function WalletDepositModal({
       }
 
       // Fallback direct generation for Vercel static deployments
-      const safeRemark = (remarkUid.trim() || `FF${computedCredits}C`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16);
-      const merchantApiUrl = `https://lgpay-setup-api.vercel.app/create-qr?amount=${computedAmount}&remark=${encodeURIComponent(safeRemark)}`;
+      const merchantApiUrl = `https://lgpay-setup-api.vercel.app/create-qr?amount=${computedAmount}&remark=${encodeURIComponent(autoRemark)}`;
       
       let rawQrMessage = '';
       try {
@@ -176,7 +223,7 @@ export function WalletDepositModal({
       }
 
       if (!rawQrMessage) {
-        rawQrMessage = `00020101021226680010fonepay.com01150000000000092350208NEP-GLRY0304FF01520453995303524540${computedAmount}.005802NP5915FFGLORY NEPAL6008KATHMANDU62160512${safeRemark.padEnd(12, '0')}6304A1B2`;
+        rawQrMessage = `00020101021226680010fonepay.com01150000000000092350208NEP-GLRY0304FF01520453995303524540${computedAmount}.005802NP5915FFGLORY NEPAL6008KATHMANDU62160512${autoRemark.padEnd(12, '0')}6304A1B2`;
       }
 
       const qrImageUrl = await QRCode.toDataURL(rawQrMessage, {
@@ -189,13 +236,13 @@ export function WalletDepositModal({
       const fallbackOrder: FonePayQrResponse = {
         success: true,
         orderId: `FFG-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`,
-        billId: safeRemark,
+        billId: autoRemark,
         amount: computedAmount,
         credits: computedCredits,
         qrImageUrl,
-        terminalName: 'NPT-MERCHANT-01',
-        location: 'Kathmandu, Nepal',
-        fonepayPanNumber: '9865432101',
+        terminalName: 'Suk Narayan Kirana Pasal',
+        location: 'Palungtar MC',
+        fonepayPanNumber: '2222610020445700',
         expiresAt: Date.now() + 15 * 60 * 1000,
       };
 
@@ -212,26 +259,24 @@ export function WalletDepositModal({
     }
   };
 
-  // Verify and Confirm Payment
+  // Automated Verify and Confirm Payment by Remark
   const handleVerifyPayment = async () => {
     if (!activeQrData) return;
     try {
       setIsVerifying(true);
       setErrorMessage(null);
 
-      const cleanUtr = utrInput.trim();
+      let verified = false;
+      let verifyMessage = '';
 
-      // 1. Check if backend Express API is running
-      let verifiedOnServer = false;
-      let serverErrorMsg: string | null = null;
-
+      // 1. Try Express backend server endpoint
       try {
         const response = await fetch('/api/payment/verify-confirm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderId: activeQrData.orderId,
-            utrReference: cleanUtr,
+            utrReference: `REMARK_${activeQrData.billId}`,
           }),
         });
 
@@ -239,76 +284,39 @@ export function WalletDepositModal({
         if (contentType.includes('application/json')) {
           const data = await response.json();
           if (response.ok && data.success) {
-            verifiedOnServer = true;
-          } else {
-            serverErrorMsg = data?.error || 'Verification failed. Transaction not detected by payment gateway.';
+            verified = true;
+          } else if (data && data.error) {
+            verifyMessage = data.error;
           }
         }
       } catch {
-        // Backend express route not active (e.g. static Vercel host)
+        // quiet fallback
       }
 
-      if (verifiedOnServer) {
-        setVerificationSuccess(true);
-        soundManager.playMilestoneSound();
-
-        try {
-          await saveTransactionToFirestore({
-            orderId: activeQrData.orderId,
-            billId: activeQrData.billId,
-            userEmail: currentUser?.email || 'registered@user.com',
-            userUid: userUid || currentUser?.uid || '2198031254',
-            amount: activeQrData.amount,
-            credits: activeQrData.credits,
-            utrReference: cleanUtr || 'LIVE_API_VERIFIED',
-            status: 'completed',
-          });
-
-          if (currentUser) {
-            await saveUserToFirestore({
-              email: currentUser.email,
-              uid: currentUser.uid || userUid,
-              displayName: currentUser.displayName,
-              role: currentUser.role || 'user',
-            });
+      // 2. Direct merchant verification API check by remark
+      if (!verified) {
+        const directVerifyUrl = `https://lgpay-setup-api.vercel.app/verify?remark=${encodeURIComponent(activeQrData.billId)}`;
+        const directRes = await fetch(directVerifyUrl);
+        const contentType = directRes.headers.get('content-type') || '';
+        if (directRes.ok && contentType.includes('application/json')) {
+          const directData = await directRes.json();
+          if (directData && directData.verified === true) {
+            verified = true;
+          } else {
+            verifyMessage = directData?.message || `No completed payment found for remark '${activeQrData.billId}'.`;
           }
-        } catch (dbErr) {
-          console.warn('[Firestore] Note: Could not sync transaction to cloud DB:', dbErr);
         }
-
-        onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, cleanUtr || 'LIVE_API_VERIFIED');
-        setTimeout(() => {
-          setTransactions(loadTransactions());
-        }, 500);
-        return;
       }
 
-      // If backend API responded with an explicit rejection (e.g. payment not made or invalid UTR)
-      if (serverErrorMsg) {
-        throw new Error(serverErrorMsg);
-      }
-
-      // 2. Strict Fallback Verification for static deployments
-      // User MUST provide a valid Transaction ID / UTR from eSewa, Khalti, or Bank Receipt
-      if (!cleanUtr) {
-        throw new Error('Transaction Verification Required: Please enter the 6 to 20 character Transaction ID / UTR number from your payment receipt to verify.');
-      }
-
-      if (cleanUtr.length < 6 || cleanUtr.length > 30 || !/^[a-zA-Z0-9_-]+$/.test(cleanUtr)) {
-        throw new Error('Invalid Transaction ID / UTR format: Please enter a valid 6 to 20 digit Transaction ID from your eSewa, Khalti, or mobile bank receipt.');
-      }
-
-      // Check duplicate UTR against previous local transactions
-      const existingTxns = loadTransactions();
-      const isDuplicate = existingTxns.some(t => t.utrReference && t.utrReference.toLowerCase() === cleanUtr.toLowerCase());
-      if (isDuplicate) {
-        throw new Error(`Transaction ID '${cleanUtr}' has already been redeemed. Duplicate claims are strictly prohibited.`);
+      if (!verified) {
+        throw new Error(
+          verifyMessage || `Payment not detected for remark '${activeQrData.billId}'. Please scan the QR with your eSewa, Khalti, or mobile bank app and authorize payment.`
+        );
       }
 
       setVerificationSuccess(true);
       soundManager.playMilestoneSound();
 
-      // Store transaction in database for Admin audit
       try {
         await saveTransactionToFirestore({
           orderId: activeQrData.orderId,
@@ -317,7 +325,7 @@ export function WalletDepositModal({
           userUid: userUid || currentUser?.uid || '2198031254',
           amount: activeQrData.amount,
           credits: activeQrData.credits,
-          utrReference: cleanUtr,
+          utrReference: `AUTO_REMARK_${activeQrData.billId}`,
           status: 'completed',
         });
 
@@ -333,14 +341,13 @@ export function WalletDepositModal({
         console.warn('[Firestore] Note: Could not sync transaction to cloud DB:', dbErr);
       }
 
-      // Credit wallet
-      onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, cleanUtr);
+      onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, `REMARK_${activeQrData.billId}`);
 
       setTimeout(() => {
         setTransactions(loadTransactions());
       }, 500);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Verification failed. Please complete the transfer first and enter your payment receipt UTR.');
+      setErrorMessage(err.message || `Payment pending for remark '${activeQrData?.billId}'. Please scan QR to complete transfer.`);
     } finally {
       setIsVerifying(false);
     }
@@ -509,45 +516,38 @@ export function WalletDepositModal({
                     </div>
                   </div>
 
-                  {/* Realtime Automated & Manual Transaction Verification Form */}
+                  {/* Fully Automated Gateway Verification Section */}
                   <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-teal-400" />
-                        Realtime Transaction Verification System
+                        Automated Gateway Verification
                       </span>
                       <span className="text-[11px] text-teal-400 flex items-center gap-1 font-mono">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></span>
+                        <span className="inline-block w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
                         {autoCheckStatus}
                       </span>
                     </div>
 
                     <div className="text-[11px] text-slate-400">
-                      Once scanned & paid, click below to verify. If instant gateway sync is pending, enter your <strong>Transaction ID / UTR number</strong> from your payment receipt to complete verification immediately.
+                      This system automatically tracks remark <strong className="text-white font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">{activeQrData.billId}</strong> in real-time. Once scanned & paid in your bank app, credits are added automatically.
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        placeholder="Enter Transaction ID / UTR from receipt (e.g. 78502313 or bank ref)"
-                        value={utrInput}
-                        onChange={(e) => setUtrInput(e.target.value)}
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 font-mono"
-                      />
+                    <div className="pt-1">
                       <button
                         onClick={handleVerifyPayment}
                         disabled={isVerifying}
-                        className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-bold text-xs uppercase tracking-wide transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                        className="w-full py-3 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
                       >
                         {isVerifying ? (
                           <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Verifying Live...</span>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Checking Gateway API Status...</span>
                           </>
                         ) : (
                           <>
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Confirm & Add Credits</span>
+                            <RefreshCw className="w-4 h-4" />
+                            <span>Check Payment Status Now</span>
                           </>
                         )}
                       </button>

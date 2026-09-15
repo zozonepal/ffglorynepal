@@ -530,7 +530,7 @@ app.post('/api/payment/verify-confirm', async (req, res) => {
     });
   }
 
-  // Step 1: Query the Realtime FonePay Merchant Verify API server-side
+  // Query the Realtime FonePay Merchant Verify API server-side
   let liveVerified = false;
   let liveMessage = '';
   try {
@@ -555,60 +555,28 @@ app.post('/api/payment/verify-confirm', async (req, res) => {
     console.warn('[Payment Verification] Live API check error:', err?.message || err);
   }
 
-  // Step 2: Strict security check to prevent free credit exploitation
-  // If the automated live merchant API has not confirmed the transaction yet,
-  // the user MUST provide a valid Nepal banking transaction UTR / Reference ID (e.g. 8-16 digits from eSewa/banking receipt).
-  const cleanUtr = typeof utrReference === 'string' ? utrReference.trim() : '';
-
+  // Strict automated API check: payment MUST be verified by FonePay API for this order's remark!
   if (!liveVerified) {
-    // If no UTR was entered, reject immediately with clear instructions
-    if (!cleanUtr) {
-      return res.status(400).json({
-        success: false,
-        error: 'No payment detected yet for this QR. Please complete the transfer in your banking app and enter your Transaction ID / UTR number from your payment receipt.',
-        requiresUtr: true,
-      });
-    }
-
-    // Validate UTR format: must be at least 6 characters, alphanumeric
-    if (cleanUtr.length < 6 || cleanUtr.length > 30 || !/^[a-zA-Z0-9_-]+$/.test(cleanUtr)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid Transaction ID / UTR format. Please enter the valid 6-20 character Transaction/Trace ID from your eSewa, Khalti, or mobile banking receipt.',
-        requiresUtr: true,
-      });
-    }
-
-    // Check if this UTR was already used in a previous completed order to prevent double-spending
-    for (const [existingOrderId, existingOrder] of activeOrders.entries()) {
-      if (
-        existingOrderId !== order.orderId &&
-        existingOrder.status === 'completed' &&
-        existingOrder.utrReference &&
-        existingOrder.utrReference.toLowerCase() === cleanUtr.toLowerCase()
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: `Transaction ID '${cleanUtr}' has already been redeemed for an existing order. Duplicate claims are not permitted.`,
-        });
-      }
-    }
+    return res.status(400).json({
+      success: false,
+      error: `Payment not verified yet for remark '${order.billId}'. Please scan the QR code and complete payment in your eSewa, Khalti, or Mobile Banking app.`,
+      verified: false,
+      billId: order.billId,
+    });
   }
 
   // Mark order as completed and record details
   order.status = 'completed';
   order.verifiedAt = Date.now();
-  order.utrReference = cleanUtr || 'LIVE_API_VERIFIED';
+  order.utrReference = `REMARK_${order.billId}_VERIFIED`;
 
   console.log(
-    `[Payment Verified] Order ${orderId} SUCCESS! Credits: +${order.credits}, Amount: NPR ${order.amount}, UTR: ${order.utrReference}, LiveVerified: ${liveVerified}`
+    `[Payment Verified] Order ${orderId} SUCCESS! Credits: +${order.credits}, Amount: NPR ${order.amount}, Remark: ${order.billId}, LiveVerified: true`
   );
 
   return res.json({
     success: true,
-    message: liveVerified
-      ? `Realtime verification successful! NPR ${order.amount} confirmed by FonePay. +${order.credits} Credits added to wallet.`
-      : `Payment receipt verified for Ref #${cleanUtr}! NPR ${order.amount} confirmed. +${order.credits} Credits added to wallet.`,
+    message: `Automated payment verification successful! NPR ${order.amount} confirmed by FonePay Gateway for remark '${order.billId}'. +${order.credits} Credits added to wallet.`,
     credits: order.credits,
     amount: order.amount,
     orderId: order.orderId,
