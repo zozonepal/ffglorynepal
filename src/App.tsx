@@ -118,24 +118,44 @@ export default function App() {
     []
   );
 
-  // Start Bot Function
+  // Start Bot Function (1 Credit = 1 Bot Worker/Squad = 8 Hours Shift)
   const handleStartBot = useCallback(async () => {
-    if (creditsRef.current <= 0) {
-      soundManager.playStopSound();
-      addLog('warning', '⚠️ Insufficient credits: 0 Credits in wallet. 1 Credit (Rs 235) required per match.');
-      setIsWalletModalOpen(true);
-      return;
+    const requiredCredits = botConfig.batchWorkers;
+    const isResumingExistingShift = botState.status === 'paused' && botState.startedAt !== null;
+
+    if (!isResumingExistingShift) {
+      if (creditsRef.current < requiredCredits) {
+        soundManager.playStopSound();
+        addLog(
+          'warning',
+          `⚠️ Insufficient credits: ${requiredCredits} Credits required for ${requiredCredits} Bot Worker(s) (1 Credit = 1 Bot Squad = 8 Hours Shift). You have ${creditsRef.current} Credits.`
+        );
+        setIsWalletModalOpen(true);
+        return;
+      }
+
+      // Deduct 1 credit per bot worker for the 8-Hour shift session
+      const nextCredits = creditsRef.current - requiredCredits;
+      creditsRef.current = nextCredits;
+      setCredits(nextCredits);
+      saveCredits(nextCredits);
+
+      addLog(
+        'info',
+        `💳 8-Hour Shift Deducted: -${requiredCredits} Credit(s) consumed for ${requiredCredits} Bot Worker(s) (${nextCredits} Credits remaining).`
+      );
     }
 
+    const now = Date.now();
     setBotState((prev) => ({
       ...prev,
       status: 'running',
-      startedAt: prev.startedAt || Date.now(),
-      lastPulseAt: Date.now(),
+      startedAt: isResumingExistingShift ? prev.startedAt : now,
+      lastPulseAt: now,
     }));
 
     soundManager.playLaunchSound();
-    addLog('success', `🚀 8-Hour Glory Bot Shift Authorized for target: ${guild.guildName} (Guild UID: ${guild.guildId})`);
+    addLog('success', `🚀 8-Hour Glory Bot Shift Active for target: ${guild.guildName} (Guild UID: ${guild.guildId})`);
     
     try {
       addLog('network', `📡 Authenticating session via secure server route (/api/bot/launch)...`);
@@ -158,7 +178,7 @@ export default function App() {
         addLog('network', `🔐 Server Proxy Authorized (Session: ${data.sessionId})`);
         addLog(
           'success',
-          `✅ FFGlory API Authorized! ${data.batchWorkers} Bot workers running 8-hour shift on Guild UID: ${data.targetGuildId}`
+          `✅ FFGlory API Authorized! ${data.batchWorkers} Bot worker squad(s) running 8-hour shift on Guild UID: ${data.targetGuildId}`
         );
       } else {
         addLog('network', `Allocated ${botConfig.batchWorkers} worker threads for 8-hour shift via ${botConfig.proxyNode}`);
@@ -169,7 +189,7 @@ export default function App() {
         `Allocated ${botConfig.batchWorkers} worker threads for 8-hour shift via ${botConfig.proxyNode}`
       );
     }
-  }, [addLog, botConfig.batchWorkers, botConfig.mode, botConfig.proxyNode, botConfig.safeIntervalSec, currentUser?.email, currentUser?.uid, guild.guildId, guild.guildName]);
+  }, [addLog, botConfig.batchWorkers, botConfig.mode, botConfig.proxyNode, botState.startedAt, botState.status, currentUser?.email, currentUser?.uid, guild.guildId, guild.guildName]);
 
   // Pause Bot
   const handlePauseBot = useCallback(() => {
@@ -247,20 +267,17 @@ export default function App() {
     }
 
     const runPulse = () => {
-      // Check credit balance before executing match
-      if (creditsRef.current <= 0) {
+      // Check 8-hour shift expiration (8 Hours = 480 Minutes)
+      const elapsedHours = botState.startedAt ? (Date.now() - botState.startedAt) / 3600000 : 0;
+      if (elapsedHours >= 8) {
         handleStopBot();
         soundManager.playStopSound();
-        addLog('warning', '⚠️ Glory Bot stopped: 0 Credits remaining in wallet. Please deposit credits via FonePay.');
-        setIsWalletModalOpen(true);
+        addLog(
+          'success',
+          `⌛ 8-Hour Bot Shift Completed! All ${botConfig.batchWorkers} bot worker squad(s) completed their 8-hour shift.`
+        );
         return;
       }
-
-      // Deduct 1 credit for this clan match round
-      const nextCredits = creditsRef.current - 1;
-      creditsRef.current = nextCredits;
-      setCredits(nextCredits);
-      saveCredits(nextCredits);
 
       // Pick random active member assigned to bot
       const activeMembers = members.filter((m) => m.isBotAssigned);
@@ -294,8 +311,8 @@ export default function App() {
       setBotState((prev) => {
         const newGlory = prev.gloryEarned + points;
         const newMatches = prev.matchesCompleted + 1;
-        const elapsedHours = Math.max(0.01, (Date.now() - (prev.startedAt || Date.now())) / 3600000);
-        const ratePerHour = Math.round(newGlory / elapsedHours);
+        const elapsedHoursNow = Math.max(0.01, (Date.now() - (prev.startedAt || Date.now())) / 3600000);
+        const ratePerHour = Math.round(newGlory / elapsedHoursNow);
 
         const totalGloryNow = guild.currentGlory + newGlory;
         const remainingGlory = Math.max(0, guild.targetGlory - totalGloryNow);
@@ -327,7 +344,7 @@ export default function App() {
       // Log event
       addLog(
         'glory',
-        `[${modeDesc}] Match completed! +${points} Glory to ${targetMember.name} • 1 Credit consumed (${nextCredits} credits left)`,
+        `[${modeDesc}] Match completed! +${points} Glory to ${targetMember.name} • 8-Hour Shift Active (${creditsRef.current} wallet credits remaining)`,
         workerIndex,
         points
       );

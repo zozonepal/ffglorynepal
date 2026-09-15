@@ -257,11 +257,11 @@ app.get('/api/pricing', (req, res) => {
     pricePerCredit: PRICE_PER_CREDIT,
     currency: 'NPR',
     packs: [
-      { id: 'p1', credits: 1, title: '1 Credit', subtitle: 'Single Clan Match', price: 235, popular: false },
-      { id: 'p3', credits: 3, title: '3 Credits', subtitle: '3 Matches Pack', price: 705, popular: false },
-      { id: 'p5', credits: 5, title: '5 Credits', subtitle: 'Standard Clan Pack', price: 1175, popular: true },
-      { id: 'p10', credits: 10, title: '10 Credits', subtitle: 'Pro Tournament Pack', price: 2350, popular: false },
-      { id: 'p20', credits: 20, title: '20 Credits', subtitle: 'Clan Master Pack', price: 4700, popular: false },
+      { id: 'p1', credits: 1, title: '1 Credit', subtitle: '1 Bot Squad (8-Hour Shift)', price: 235, popular: false },
+      { id: 'p3', credits: 3, title: '3 Credits', subtitle: '3 Bot Squads (8-Hour Shift)', price: 705, popular: false },
+      { id: 'p5', credits: 5, title: '5 Credits', subtitle: '5 Bot Squads (8-Hour Shift)', price: 1175, popular: true },
+      { id: 'p10', credits: 10, title: '10 Credits', subtitle: '10 Bot Squads (8-Hour Shift)', price: 2350, popular: false },
+      { id: 'p20', credits: 20, title: '20 Credits', subtitle: '20 Bot Squads (8-Hour Shift)', price: 4700, popular: false },
       { id: 'custom', credits: 0, title: 'Custom Pack', subtitle: 'Any quantity of credits', price: 0, popular: false },
     ],
   });

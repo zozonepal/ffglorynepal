@@ -90,7 +90,7 @@ export function AutoLauncherBar({
             <div className="flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>
-                <strong>Credit System Active:</strong> 1 Credit (Rs {PRICE_PER_CREDIT}) per match. Wallet empty.
+                <strong>Credit System Active:</strong> 1 Credit (Rs {PRICE_PER_CREDIT}) = 1 Bot Squad (8 Hours Shift). Wallet empty.
               </span>
             </div>
             <button
