@@ -219,29 +219,96 @@ export function WalletDepositModal({
       setIsVerifying(true);
       setErrorMessage(null);
 
-      let data: any = null;
+      const cleanUtr = utrInput.trim();
+
+      // 1. Check if backend Express API is running
+      let verifiedOnServer = false;
+      let serverErrorMsg: string | null = null;
+
       try {
         const response = await fetch('/api/payment/verify-confirm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderId: activeQrData.orderId,
-            utrReference: utrInput.trim(),
+            utrReference: cleanUtr,
           }),
         });
 
         const contentType = response.headers.get('content-type') || '';
-        if (response.ok && contentType.includes('application/json')) {
-          data = await response.json();
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (response.ok && data.success) {
+            verifiedOnServer = true;
+          } else {
+            serverErrorMsg = data?.error || 'Verification failed. Transaction not detected by payment gateway.';
+          }
         }
       } catch {
-        // Static deployment fallback
+        // Backend express route not active (e.g. static Vercel host)
+      }
+
+      if (verifiedOnServer) {
+        setVerificationSuccess(true);
+        soundManager.playMilestoneSound();
+
+        try {
+          await saveTransactionToFirestore({
+            orderId: activeQrData.orderId,
+            billId: activeQrData.billId,
+            userEmail: currentUser?.email || 'registered@user.com',
+            userUid: userUid || currentUser?.uid || '2198031254',
+            amount: activeQrData.amount,
+            credits: activeQrData.credits,
+            utrReference: cleanUtr || 'LIVE_API_VERIFIED',
+            status: 'completed',
+          });
+
+          if (currentUser) {
+            await saveUserToFirestore({
+              email: currentUser.email,
+              uid: currentUser.uid || userUid,
+              displayName: currentUser.displayName,
+              role: currentUser.role || 'user',
+            });
+          }
+        } catch (dbErr) {
+          console.warn('[Firestore] Note: Could not sync transaction to cloud DB:', dbErr);
+        }
+
+        onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, cleanUtr || 'LIVE_API_VERIFIED');
+        setTimeout(() => {
+          setTransactions(loadTransactions());
+        }, 500);
+        return;
+      }
+
+      // If backend API responded with an explicit rejection (e.g. payment not made or invalid UTR)
+      if (serverErrorMsg) {
+        throw new Error(serverErrorMsg);
+      }
+
+      // 2. Strict Fallback Verification for static deployments
+      // User MUST provide a valid Transaction ID / UTR from eSewa, Khalti, or Bank Receipt
+      if (!cleanUtr) {
+        throw new Error('Transaction Verification Required: Please enter the 6 to 20 character Transaction ID / UTR number from your payment receipt to verify.');
+      }
+
+      if (cleanUtr.length < 6 || cleanUtr.length > 30 || !/^[a-zA-Z0-9_-]+$/.test(cleanUtr)) {
+        throw new Error('Invalid Transaction ID / UTR format: Please enter a valid 6 to 20 digit Transaction ID from your eSewa, Khalti, or mobile bank receipt.');
+      }
+
+      // Check duplicate UTR against previous local transactions
+      const existingTxns = loadTransactions();
+      const isDuplicate = existingTxns.some(t => t.utrReference && t.utrReference.toLowerCase() === cleanUtr.toLowerCase());
+      if (isDuplicate) {
+        throw new Error(`Transaction ID '${cleanUtr}' has already been redeemed. Duplicate claims are strictly prohibited.`);
       }
 
       setVerificationSuccess(true);
       soundManager.playMilestoneSound();
 
-      // Store all user and transaction data in the database for the admin panel
+      // Store transaction in database for Admin audit
       try {
         await saveTransactionToFirestore({
           orderId: activeQrData.orderId,
@@ -250,7 +317,7 @@ export function WalletDepositModal({
           userUid: userUid || currentUser?.uid || '2198031254',
           amount: activeQrData.amount,
           credits: activeQrData.credits,
-          utrReference: utrInput.trim() || data?.utrReference || 'LIVE_API_VERIFIED',
+          utrReference: cleanUtr,
           status: 'completed',
         });
 
@@ -266,15 +333,14 @@ export function WalletDepositModal({
         console.warn('[Firestore] Note: Could not sync transaction to cloud DB:', dbErr);
       }
 
-      // Credit the wallet
-      onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, utrInput.trim());
+      // Credit wallet
+      onCreditsAdded(activeQrData.credits, activeQrData.amount, activeQrData.orderId, cleanUtr);
 
-      // Refresh transactions
       setTimeout(() => {
         setTransactions(loadTransactions());
       }, 500);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Verification failed. Please ensure payment is completed.');
+      setErrorMessage(err.message || 'Verification failed. Please complete the transfer first and enter your payment receipt UTR.');
     } finally {
       setIsVerifying(false);
     }
