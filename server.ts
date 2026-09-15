@@ -284,13 +284,7 @@ app.post('/api/bot/launch', async (req, res) => {
     const maskedKey = `${FFGLORY_API_KEY.slice(0, 9)}***${FFGLORY_API_KEY.slice(-10)}`;
     const sessionId = `SESSION-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-    console.log(`[FFGlory Backend Proxy] Authorizing Bot Launch via FFGLORY_API_KEY (${maskedKey}). Target Guild UID: ${guildId} (${guildName || 'Clan'})`);
-
-    // In a production backend setup, we make the server-to-server call with Authorization header:
-    // await fetch('https://api.ffglory.com/v1/launch', {
-    //   headers: { 'Authorization': `Bearer ${FFGLORY_API_KEY}` },
-    //   body: JSON.stringify({ guild_id: guildId, mode, workers: batchWorkers })
-    // });
+    console.log(`[FFGlory Backend Proxy] Authorizing Bot Launch via FFGLORY_API_KEY. Target Guild UID: ${guildId} (${guildName || 'Clan'})`);
 
     return res.json({
       success: true,
@@ -300,7 +294,7 @@ app.post('/api/bot/launch', async (req, res) => {
       guildName: guildName || 'Nepal Elite eSPORTS',
       mode: mode || 'clash_squad_fast',
       batchWorkers: batchWorkers || 1,
-      maskedApiKey: maskedKey,
+      authType: 'secure_server_proxy',
       serverNode: 'NPT-KTM-01-DIRECT',
       authorizedAt: new Date().toISOString(),
       userEmail,

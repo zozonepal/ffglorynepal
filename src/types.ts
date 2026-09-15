@@ -26,6 +26,7 @@ export interface BotConfig {
   stealthAntiBan: boolean;
   soundAlerts: boolean;
   autoPushNotify: boolean;
+  shiftDurationHours?: number; // 8 Hours shift per bot launch
 }
 
 export interface BotState {
@@ -37,6 +38,9 @@ export interface BotState {
   currentPing: number;
   gloryRatePerHour: number;
   estimatedCompletionMinutes: number;
+  shiftDurationHours?: number;
+  shiftTimeRemainingSec?: number;
+  apiKeyMasked?: string;
 }
 
 export interface BotLog {

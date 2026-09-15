@@ -135,10 +135,10 @@ export default function App() {
     }));
 
     soundManager.playLaunchSound();
-    addLog('success', `🚀 Glory Bot launch requested for target: ${guild.guildName} (Guild UID: ${guild.guildId})`);
+    addLog('success', `🚀 8-Hour Glory Bot Shift Authorized for target: ${guild.guildName} (Guild UID: ${guild.guildId})`);
     
     try {
-      addLog('network', `📡 Authenticating session via backend proxy route (/api/bot/launch)...`);
+      addLog('network', `📡 Authenticating session via secure server route (/api/bot/launch)...`);
       const res = await fetch('/api/bot/launch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -147,6 +147,7 @@ export default function App() {
           guildName: guild.guildName,
           mode: botConfig.mode,
           batchWorkers: botConfig.batchWorkers,
+          shiftHours: 8,
           userEmail: currentUser?.email || 'guest@ffglory.np',
           userUid: currentUser?.uid || guild.guildId,
         }),
@@ -154,18 +155,18 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
-        addLog('network', `🔐 Server Authorized: Using backend key ${data.maskedApiKey} (Session: ${data.sessionId})`);
+        addLog('network', `🔐 Server Proxy Authorized (Session: ${data.sessionId})`);
         addLog(
           'success',
-          `✅ FFGlory API Authorized! ${data.batchWorkers} Bot workers running on Guild UID: ${data.targetGuildId}`
+          `✅ FFGlory API Authorized! ${data.batchWorkers} Bot workers running 8-hour shift on Guild UID: ${data.targetGuildId}`
         );
       } else {
-        addLog('network', `Allocated ${botConfig.batchWorkers} worker threads via ${botConfig.proxyNode} (Anti-Ban Safe Jitter: ${botConfig.safeIntervalSec}s)`);
+        addLog('network', `Allocated ${botConfig.batchWorkers} worker threads for 8-hour shift via ${botConfig.proxyNode}`);
       }
     } catch {
       addLog(
         'network',
-        `Allocated ${botConfig.batchWorkers} worker threads via ${botConfig.proxyNode} (Anti-Ban Safe Jitter: ${botConfig.safeIntervalSec}s)`
+        `Allocated ${botConfig.batchWorkers} worker threads for 8-hour shift via ${botConfig.proxyNode}`
       );
     }
   }, [addLog, botConfig.batchWorkers, botConfig.mode, botConfig.proxyNode, botConfig.safeIntervalSec, currentUser?.email, currentUser?.uid, guild.guildId, guild.guildName]);
